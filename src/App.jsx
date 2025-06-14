@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { v4 as uuid } from 'uuid';
+import { Buffer } from 'buffer';
 
 const API = 'http://127.0.0.1:5984/';
 
@@ -21,26 +22,31 @@ function Feed() {
     fetch(API)
       .then(res => res.json())
       .then(data => data.rows.map(row => row.doc))
-      .then(docs => setTweets(docs.reverse())) // pour afficher les plus récents en haut
+      .then(docs => setTweets(docs.reverse()))
       .catch(err => console.error("Erreur fetch :", err));
   };
 
-  const postTweet = (user, text) => {
+  const postTweet = (user, password, text) => {
     const id = uuid();
-    const newTweet = {
+    const created_at = new Date().toUTCString();
+
+    const tweet = {
       _id: id,
       user,
       text,
-      created_at: new Date().toUTCString()
+      created_at
     };
 
-    // Mise à jour optimiste :
-    setTweets([newTweet, ...tweets]);
+    // Optimiste
+    setTweets([tweet, ...tweets]);
 
     fetch(API + id, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newTweet)
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64')
+      },
+      body: JSON.stringify(tweet)
     })
       .then(fetchTweets)
       .catch(fetchTweets);
@@ -71,13 +77,15 @@ function Tweet({ data }) {
 
 function FutureTweet({ postTweet }) {
   const [user, setUser] = useState('');
+  const [password, setPassword] = useState('');
   const [text, setText] = useState('');
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!user || !text) return;
-    postTweet(user, text);
+    if (!user || !password || !text) return;
+    postTweet(user, password, text);
     setUser('');
+    setPassword('');
     setText('');
   };
 
@@ -87,6 +95,12 @@ function FutureTweet({ postTweet }) {
         placeholder="Qui êtes-vous ?"
         value={user}
         onChange={e => setUser(e.target.value)}
+      />
+      <input
+        placeholder="Quel est votre mot de passe ?"
+        value={password}
+        onChange={e => setPassword(e.target.value)}
+        type="password"
       />
       <input
         placeholder="Quoi de neuf ?"
