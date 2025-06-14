@@ -1,66 +1,113 @@
 import { useState, useEffect } from 'react';
-import { v4 as uuid } from 'uuid';
-import { Buffer } from 'buffer';
+import Backend from './Backend';
 
-const API = 'http://127.0.0.1:5984/';
+const backend = new Backend();
 
 function App() {
   return (
     <>
+      <ReactNotifications />
       <header>
         <h1>Cuicui !</h1>
       </header>
+      <Authenticated />
       <Feed />
     </>
+  );
+}
+
+function Authenticated() {
+  const [name, setName] = useState(null);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const { name, password } = Object.fromEntries(new FormData(e.target).entries());
+    backend.authenticate({ name, password }).then((result) => {
+      if (result) {
+        setName(result);
+        Store.addNotification({
+          title: 'Connexion réussie',
+          message: `Bienvenue ${result}`,
+          type: 'success',
+          insert: 'top',
+          container: 'top-right',
+          dismiss: { duration: 2000 },
+        });
+      } else {
+        Store.addNotification({
+          title: 'Erreur de connexion',
+          message: 'Identifiants incorrects',
+          type: 'danger',
+          insert: 'top',
+          container: 'top-right',
+          dismiss: { duration: 3000 },
+        });
+      }
+    });
+  };
+
+  if (name) return <div className="authenticated">Connecté : {name}</div>;
+
+  return (
+    <form onSubmit={handleSubmit} className="authenticated">
+      <input placeholder="nom d'utilisateur" name="name" required />
+      <input placeholder="mot de passe" name="password" type="password" required />
+      <button type="submit">Se connecter</button>
+    </form>
   );
 }
 
 function Feed() {
   const [tweets, setTweets] = useState([]);
 
-  const fetchTweets = () => {
-    fetch(API)
-      .then(res => res.json())
-      .then(data => data.rows.map(row => row.doc))
-      .then(docs => setTweets(docs.reverse()))
-      .catch(err => console.error("Erreur fetch :", err));
+  useEffect(() => {
+    backend.fetchTweets().then(setTweets);
+  }, []);
+
+  const handlePost = (text) => {
+    backend.postTweet(text)
+      .then(setTweets)
+      .catch(() => {
+        Store.addNotification({
+          title: 'Erreur',
+          message: 'Veuillez vous connecter pour publier',
+          type: 'warning',
+          insert: 'top',
+          container: 'top-right',
+          dismiss: { duration: 3000 },
+        });
+      });
   };
-
-  const postTweet = (user, password, text) => {
-    const id = uuid();
-    const created_at = new Date().toUTCString();
-
-    const tweet = {
-      _id: id,
-      user,
-      text,
-      created_at
-    };
-
-    // Optimiste
-    setTweets([tweet, ...tweets]);
-
-    fetch(API + id, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Basic ' + Buffer.from(`${user}:${password}`).toString('base64')
-      },
-      body: JSON.stringify(tweet)
-    })
-      .then(fetchTweets)
-      .catch(fetchTweets);
-  };
-
-  useEffect(fetchTweets, []);
 
   return (
     <main>
-      <FutureTweet postTweet={postTweet} />
-      {tweets.map(tweet => (
+      <FutureTweet onPost={handlePost} />
+      {tweets.map((tweet) => (
         <Tweet key={tweet._id} data={tweet} />
       ))}
     </main>
+  );
+}
+
+function FutureTweet({ onPost }) {
+  const [text, setText] = useState('');
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (text.trim() === '') return;
+    onPost(text);
+    setText('');
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        placeholder="Quoi de neuf ?"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <button type="submit">Publier</button>
+    </form>
   );
 }
 
@@ -68,47 +115,10 @@ function Tweet({ data }) {
   const { user, text, created_at } = data;
   return (
     <article className="tweet">
-      <div className="user">👤 {user}</div>
-      <div className="timestamp">🕒 {created_at}</div>
+      <div className="user">{user}</div>
+      <div className="timestamp">{created_at}</div>
       <div className="text">{text}</div>
     </article>
-  );
-}
-
-function FutureTweet({ postTweet }) {
-  const [user, setUser] = useState('');
-  const [password, setPassword] = useState('');
-  const [text, setText] = useState('');
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!user || !password || !text) return;
-    postTweet(user, password, text);
-    setUser('');
-    setPassword('');
-    setText('');
-  };
-
-  return (
-    <form onSubmit={handleSubmit}>
-      <input
-        placeholder="Qui êtes-vous ?"
-        value={user}
-        onChange={e => setUser(e.target.value)}
-      />
-      <input
-        placeholder="Quel est votre mot de passe ?"
-        value={password}
-        onChange={e => setPassword(e.target.value)}
-        type="password"
-      />
-      <input
-        placeholder="Quoi de neuf ?"
-        value={text}
-        onChange={e => setText(e.target.value)}
-      />
-      <button type="submit">Publier</button>
-    </form>
   );
 }
 
